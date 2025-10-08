@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alvinunreal/tmuxai/config"
@@ -130,32 +131,45 @@ func (c *CLIInterface) processInput(input string) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 
-	// Set up a notification channel
-	done := make(chan struct{})
+	// Use a WaitGroup to wait for the processing to complete
+	var wg sync.WaitGroup
+	wg.Add(1)
 
 	// Create a cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Launch a goroutine just for handling the interrupt
+	// Launch a goroutine for the message processing
 	go func() {
-		select {
-		case <-sigChan:
-			cancel()
-			c.manager.Status = ""
-			c.manager.WatchMode = false
-		case <-done:
-		}
+		defer wg.Done() // Decrement the WaitGroup counter when done
+
+		// Run the message processing in the goroutine
+		c.manager.Status = "running"
+		c.manager.ProcessUserMessage(ctx, input)
+		c.manager.Status = ""
 	}()
 
-	// Run the message processing in the main thread
-	c.manager.Status = "running"
-	c.manager.ProcessUserMessage(ctx, input)
-	c.manager.Status = ""
+	// Wait for either the processing to finish or for an interrupt signal
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
 
-	close(done)
+	select {
+	case <-sigChan:
+		// Ctrl+C was pressed
+		fmt.Println("\nReceived interrupt signal, canceling operation...")
+		cancel() // Signal the goroutine to stop
+		<-done   // Wait for the goroutine to finish cleanup
+		fmt.Println("Operation canceled.")
+	case <-done:
+		// Processing completed normally
+	}
 
+	// Clean up signal handling
 	signal.Stop(sigChan)
+	close(sigChan)
 }
 
 // newCompleter creates a completion handler for command completion
