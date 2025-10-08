@@ -19,12 +19,13 @@ func (m *Manager) ProcessUserMessage(ctx context.Context, message string) bool {
 		m.squashHistory()
 	}
 
+	// Create and manage spinner inside the processing goroutine
 	s := spinner.New(spinner.CharSets[26], 100*time.Millisecond)
 	s.Start()
+	defer s.Stop()
 
-	// check for status change before processing
-	if m.Status == "" {
-		s.Stop()
+	// Early exit if context is already canceled
+	if ctx.Err() != nil {
 		return false
 	}
 
@@ -56,8 +57,6 @@ func (m *Manager) ProcessUserMessage(ctx context.Context, message string) bool {
 
 	response, err := m.AiClient.GetResponseFromChatMessages(ctx, sending, m.GetOpenRouterModel())
 	if err != nil {
-		s.Stop()
-		m.Status = ""
 
 		if ctx.Err() == context.Canceled {
 			return false

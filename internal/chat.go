@@ -141,12 +141,13 @@ func (c *CLIInterface) processInput(input string) {
 
 	// Launch a goroutine for the message processing
 	go func() {
-		defer wg.Done() // Decrement the WaitGroup counter when done
+		defer wg.Done()
+		defer func() {
+			c.manager.Status = ""
+		}()
 
-		// Run the message processing in the goroutine
 		c.manager.Status = "running"
 		c.manager.ProcessUserMessage(ctx, input)
-		c.manager.Status = ""
 	}()
 
 	// Wait for either the processing to finish or for an interrupt signal
