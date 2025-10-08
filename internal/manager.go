@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -100,11 +101,25 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 
 // selectPersona selects the appropriate persona based on rules or defaults
 func (m *Manager) selectPersona() string {
-	// If there are persona rules, use the first one's persona
-	if len(m.Config.PersonaRules) > 0 {
-		return m.Config.PersonaRules[0].Persona
+	currentWindow, err := system.TmuxWindowName()
+	if err != nil {
+		logger.Error("Failed to get tmux window name: %v", err)
+		return m.Config.DefaultPersona
 	}
-	// Otherwise, use the default persona
+
+	// Check persona rules in order
+	for _, rule := range m.Config.PersonaRules {
+		matched, err := regexp.MatchString(rule.Match, currentWindow)
+		if err != nil {
+			logger.Error("Invalid regex pattern %q: %v", rule.Match, err)
+			continue
+		}
+		if matched {
+			return rule.Persona
+		}
+	}
+
+	// Fallback to default persona if no matches
 	return m.Config.DefaultPersona
 }
 
