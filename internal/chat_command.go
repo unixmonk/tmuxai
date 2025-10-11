@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,7 +19,8 @@ const helpMessage = `Available commands:
 - /prepare: Prepare the pane for TmuxAI automation
 - /watch <prompt>: Start watch mode
 - /squash: Summarize the chat history
-- /exit: Exit the application`
+- /exit: Exit the application
+- /persona [name]: List available personas or switch to the specified one`
 
 var commands = []string{
 	"/help",
@@ -30,6 +32,7 @@ var commands = []string{
 	"/prepare",
 	"/config",
 	"/squash",
+	"/persona",
 }
 
 // checks if the given content is a command
@@ -163,6 +166,14 @@ Watch for: ` + watchDesc
 		m.Println("Usage: /watch <description>")
 		return
 
+	case prefixMatch(commandPrefix, "/persona"):
+		if len(parts) > 1 {
+			m.switchPersona(parts[1])
+		} else {
+			m.listPersonas()
+		}
+		return
+
 	case prefixMatch(commandPrefix, "/config"):
 		// Helper function to check if a key is allowed
 		isKeyAllowed := func(key string) bool {
@@ -200,6 +211,37 @@ Watch for: ` + watchDesc
 // Helper function to check if a command matches a prefix
 func prefixMatch(command, target string) bool {
 	return strings.HasPrefix(target, command)
+}
+
+// listPersonas lists all available personas
+func (m *Manager) listPersonas() {
+	m.Println("Available personas:")
+	for name, persona := range m.Config.Personas {
+		m.Println(fmt.Sprintf("- %s: %s", name, persona.Description))
+	}
+	if len(m.Config.Personas) == 0 {
+		m.Println("No personas loaded. Check config or personas directory.")
+	}
+}
+
+// switchPersona switches to the specified persona
+func (m *Manager) switchPersona(name string) {
+	logger.Debug("Attempting to switch to persona: '%s'", name)
+	logger.Debug("Current persona before switch: '%s'", m.CurrentPersona)
+
+	if persona, ok := m.Config.Personas[name]; ok {
+		m.CurrentPersona = name
+		logger.Info("Successfully switched to persona: '%s'", name)
+		m.Println(fmt.Sprintf("Switched to persona: %s - %s", name, persona.Description))
+	} else {
+		logger.Warn("Persona '%s' not found", name)
+		keys := make([]string, 0, len(m.Config.Personas))
+		for k := range m.Config.Personas {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		m.Println(fmt.Sprintf("Persona '%s' not found. Available: %s", name, strings.Join(keys, ", ")))
+	}
 }
 
 // formats system information and tmux details into a readable string

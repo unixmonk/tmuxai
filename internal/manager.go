@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,10 +42,11 @@ type Manager struct {
 	ExecHistory      []CommandExecHistory
 	WatchMode        bool
 	OS               string
+	CurrentPersona   string
 	SessionOverrides map[string]interface{} // session-only config overrides
 
 	// Functions for mocking
-	confirmedToExec  func(command string, prompt string, edit bool) (bool, string)
+	confirmedToExec   func(command string, prompt string, edit bool) (bool, string)
 	getTmuxPanesInXml func(config *config.Config) string
 }
 
@@ -91,8 +93,34 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 	manager.confirmedToExec = manager.confirmedToExecFn
 	manager.getTmuxPanesInXml = manager.getTmuxPanesInXmlFn
 
+	manager.CurrentPersona = manager.selectPersona()
+	logger.Debug("Selected persona: %s", manager.CurrentPersona)
 	manager.InitExecPane()
 	return manager, nil
+}
+
+// selectPersona selects the appropriate persona based on rules or defaults
+func (m *Manager) selectPersona() string {
+	currentWindow, err := system.TmuxWindowName()
+	if err != nil {
+		logger.Error("Failed to get tmux window name: %v", err)
+		return m.Config.DefaultPersona
+	}
+
+	// Check persona rules in order
+	for _, rule := range m.Config.PersonaRules {
+		matched, err := regexp.MatchString(rule.Match, currentWindow)
+		if err != nil {
+			logger.Error("Invalid regex pattern %q: %v", rule.Match, err)
+			continue
+		}
+		if matched {
+			return rule.Persona
+		}
+	}
+
+	// Fallback to default persona if no matches
+	return m.Config.DefaultPersona
 }
 
 // Start starts the manager agent

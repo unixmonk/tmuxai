@@ -121,6 +121,16 @@ func processLineWithSpecialKeys(line string) []string {
 }
 
 // getSpecialKeys returns a map of tmux special key names
+// TmuxWindowName gets current tmux window name
+func TmuxWindowName() (string, error) {
+	cmd := exec.Command("tmux", "display-message", "-p", "#W")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("tmux command failed: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func getSpecialKeys() map[string]bool {
 	specialKeys := map[string]bool{
 		"Up": true, "Down": true, "Left": true, "Right": true,
