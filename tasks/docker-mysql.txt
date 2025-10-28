@@ -1,1 +1,0 @@
-run docker container mysql and than connect to mysql shell.
