@@ -175,13 +175,14 @@ func (c *CLIInterface) processInput(input string) {
 
 // newCompleter creates a completion handler for command completion
 func (c *CLIInterface) newCompleter() *completion.CmdCompletionOrList2 {
+	cmds := append([]string(nil), commands...)
 	return &completion.CmdCompletionOrList2{
 		Delimiter: " ",
 		Postfix:   " ",
 		Candidates: func(field []string) (forComp []string, forList []string) {
 			// Handle top-level commands
 			if len(field) == 0 || (len(field) == 1 && !strings.HasSuffix(field[0], " ")) {
-				return commands, commands
+				return cmds, cmds
 			}
 
 			// Handle /config subcommands

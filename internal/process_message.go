@@ -23,6 +23,7 @@ func (m *Manager) ProcessUserMessage(ctx context.Context, message string) bool {
 	s := spinner.New(spinner.CharSets[26], 100*time.Millisecond)
 	s.Start()
 	defer s.Stop()
+	defer m.processPendingReflections(ctx)
 
 	// Early exit if context is already canceled
 	if ctx.Err() != nil {
@@ -146,7 +147,12 @@ func (m *Manager) ProcessUserMessage(ctx context.Context, message string) bool {
 		if isSafe {
 			m.Println("Executing command: " + command)
 			if m.ExecPane.IsPrepared {
-				_, _ = m.ExecWaitCapture(command)
+				history, err := m.ExecWaitCapture(command)
+				if err != nil {
+					logger.Warn("ExecWaitCapture failed for command '%s': %v", command, err)
+				} else {
+					m.enqueueReflection(history)
+				}
 			} else {
 				_ = system.TmuxSendCommandToPane(m.ExecPane.Id, command, true)
 				time.Sleep(1 * time.Second)

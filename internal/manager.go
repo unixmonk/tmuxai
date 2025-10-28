@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -13,6 +15,8 @@ import (
 	"github.com/fatih/color"
 )
 
+const reflectionLogLimit = 500
+
 type AIResponse struct {
 	Message                string
 	SendKeys               []string
@@ -24,6 +28,12 @@ type AIResponse struct {
 	NoComment              bool
 }
 
+// AiClientInterface defines the interface for AI clients to make testing easier
+type AiClientInterface interface {
+	GetResponseFromChatMessages(ctx context.Context, messages []ChatMessage, model string) (string, error)
+	ChatCompletion(ctx context.Context, messages []Message, model string) (string, error)
+}
+
 // Parsed only when pane is prepared
 type CommandExecHistory struct {
 	Command string
@@ -31,19 +41,45 @@ type CommandExecHistory struct {
 	Code    int
 }
 
+type CommandReflection struct {
+	Command              string
+	Output               string
+	ExitCode             int
+	LessonsLearned       string
+	Alternative          string
+	AlternativeRationale string
+	SuggestedActions     []SuggestedToolAction
+	Timestamp            time.Time
+}
+
+type SuggestedToolAction struct {
+	Action      string
+	Name        string
+	Section     string
+	Description string
+	Reason      string
+	Outcome     string
+}
+
+type ReflectionTask struct {
+	History CommandExecHistory
+}
+
 // Manager represents the TmuxAI manager agent
 type Manager struct {
-	Config           *config.Config
-	AiClient         *AiClient
-	Status           string // running, waiting, done
-	PaneId           string
-	ExecPane         *system.TmuxPaneDetails
-	Messages         []ChatMessage
-	ExecHistory      []CommandExecHistory
-	WatchMode        bool
-	OS               string
-	CurrentPersona   string
-	SessionOverrides map[string]interface{} // session-only config overrides
+	Config             *config.Config
+	AiClient           AiClientInterface
+	Status             string // running, waiting, done
+	PaneId             string
+	ExecPane           *system.TmuxPaneDetails
+	Messages           []ChatMessage
+	ExecHistory        []CommandExecHistory
+	ReflectionLog      []CommandReflection
+	pendingReflections []ReflectionTask
+	WatchMode          bool
+	OS                 string
+	CurrentPersona     string
+	SessionOverrides   map[string]interface{} // session-only config overrides
 
 	// Functions for mocking
 	confirmedToExec   func(command string, prompt string, edit bool) (bool, string)
@@ -96,7 +132,279 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 	manager.CurrentPersona = manager.selectPersona()
 	logger.Debug("Selected persona: %s", manager.CurrentPersona)
 	manager.InitExecPane()
+	manager.loadReflectionLog()
 	return manager, nil
+}
+
+func (m *Manager) enqueueReflection(history CommandExecHistory) {
+	if strings.TrimSpace(history.Command) == "" {
+		return
+	}
+	m.pendingReflections = append(m.pendingReflections, ReflectionTask{History: history})
+}
+
+func (m *Manager) processPendingReflections(ctx context.Context) {
+	for len(m.pendingReflections) > 0 {
+		var task ReflectionTask
+		task, m.pendingReflections = m.pendingReflections[0], m.pendingReflections[1:]
+
+		reflection, err := m.runReflection(ctx, task)
+		if err != nil {
+			logger.Warn("Reflection failed for command '%s': %v", task.History.Command, err)
+			continue
+		}
+
+		reflection.SuggestedActions = m.applyToolActions(reflection.SuggestedActions)
+		m.ReflectionLog = append(m.ReflectionLog, reflection)
+		m.pruneReflectionLog()
+		m.persistReflectionLog()
+
+		summary := formatReflectionSummary(reflection)
+		m.Messages = append(m.Messages, ChatMessage{Content: summary, FromUser: false, Timestamp: time.Now()})
+		m.Println(summary)
+	}
+}
+
+func (m *Manager) reflectionLogPath() string {
+	return config.GetConfigFilePath("lessons-learned.json")
+}
+
+func (m *Manager) loadReflectionLog() {
+	path := m.reflectionLogPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		logger.Warn("Failed to read reflection log: %v", err)
+		return
+	}
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" {
+		return
+	}
+	var reflections []CommandReflection
+	if err := json.Unmarshal([]byte(trimmed), &reflections); err != nil {
+		logger.Warn("Failed to parse reflection log: %v", err)
+		return
+	}
+	m.ReflectionLog = append(m.ReflectionLog, reflections...)
+	m.pruneReflectionLog()
+}
+
+func (m *Manager) persistReflectionLog() {
+	m.pruneReflectionLog()
+	path := m.reflectionLogPath()
+	data, err := json.MarshalIndent(m.ReflectionLog, "", "  ")
+	if err != nil {
+		logger.Warn("Failed to encode reflection log: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		logger.Warn("Failed to write reflection log: %v", err)
+	}
+}
+
+func (m *Manager) pruneReflectionLog() {
+	if reflectionLogLimit <= 0 {
+		return
+	}
+	if len(m.ReflectionLog) <= reflectionLogLimit {
+		return
+	}
+	dropped := len(m.ReflectionLog) - reflectionLogLimit
+	m.ReflectionLog = append([]CommandReflection{}, m.ReflectionLog[len(m.ReflectionLog)-reflectionLogLimit:]...)
+	logger.Info("Reflection log trimmed, removed %d older entries", dropped)
+}
+
+func (m *Manager) runReflection(ctx context.Context, task ReflectionTask) (CommandReflection, error) {
+	manifestPath := m.GetToolsManifestPath()
+	payload := reflectionRequest{
+		Command:           task.History.Command,
+		ExitCode:          task.History.Code,
+		Output:            truncateForReflection(task.History.Output, 4000),
+		ToolsManifestPath: manifestPath,
+	}
+
+	systemPrompt := `You are an autonomous CLI specialist. Analyze the provided command execution, derive improvements, and respond with strict JSON matching this schema:
+{
+  "lessons": "string",
+  "alternative": {
+    "command": "string",
+    "reason": "string"
+  },
+  "tools": [
+    {
+      "action": "add" | "remove" | "update" | "skip",
+      "name": "string",
+      "section": "string",
+      "description": "string",
+      "reason": "string"
+    }
+  ]
+}
+Return only JSON with no code fences.`
+
+	userBytes, err := json.Marshal(payload)
+	if err != nil {
+		return CommandReflection{}, err
+	}
+
+	messages := []Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: string(userBytes)},
+	}
+
+	model := m.GetOpenRouterModel()
+	resp, err := m.AiClient.ChatCompletion(ctx, messages, model)
+	if err != nil {
+		return CommandReflection{}, err
+	}
+
+	resp = sanitizeJSONResponse(resp)
+	var parsed reflectionResponse
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		return CommandReflection{}, fmt.Errorf("failed to parse reflection JSON: %w", err)
+	}
+
+	reflection := CommandReflection{
+		Command:              task.History.Command,
+		Output:               task.History.Output,
+		ExitCode:             task.History.Code,
+		LessonsLearned:       strings.TrimSpace(parsed.Lessons),
+		Alternative:          strings.TrimSpace(parsed.Alternative.Command),
+		AlternativeRationale: strings.TrimSpace(parsed.Alternative.Reason),
+		Timestamp:            time.Now(),
+	}
+
+	for _, tool := range parsed.Tools {
+		reflection.SuggestedActions = append(reflection.SuggestedActions, SuggestedToolAction{
+			Action:      strings.ToLower(strings.TrimSpace(tool.Action)),
+			Name:        strings.TrimSpace(tool.Name),
+			Section:     strings.TrimSpace(tool.Section),
+			Description: strings.TrimSpace(tool.Description),
+			Reason:      strings.TrimSpace(tool.Reason),
+		})
+	}
+
+	return reflection, nil
+}
+
+func (m *Manager) applyToolActions(actions []SuggestedToolAction) []SuggestedToolAction {
+	path := m.GetToolsManifestPath()
+	if path == "" {
+		for i := range actions {
+			actions[i].Outcome = "skipped: manifest path not configured"
+		}
+		return actions
+	}
+
+	for i := range actions {
+		action := strings.ToLower(actions[i].Action)
+		switch action {
+		case "add", "update":
+			if actions[i].Section == "" {
+				actions[i].Outcome = "skipped: section required"
+				continue
+			}
+			change, modified, err := AddToolToManifest(path, actions[i].Section, actions[i].Name, actions[i].Description)
+			if err != nil {
+				actions[i].Outcome = fmt.Sprintf("error: %v", err)
+				continue
+			}
+			if modified {
+				actions[i].Outcome = change.Action
+			} else {
+				actions[i].Outcome = "unchanged"
+			}
+		case "remove":
+			if actions[i].Section == "" {
+				actions[i].Outcome = "skipped: section required"
+				continue
+			}
+			_, modified, err := RemoveToolFromManifest(path, actions[i].Section, actions[i].Name)
+			if err != nil {
+				actions[i].Outcome = fmt.Sprintf("error: %v", err)
+				continue
+			}
+			if modified {
+				actions[i].Outcome = "removed"
+			} else {
+				actions[i].Outcome = "not-found"
+			}
+		default:
+			actions[i].Outcome = "skipped: no-op"
+		}
+	}
+
+	return actions
+}
+
+func formatReflectionSummary(reflection CommandReflection) string {
+	var builder strings.Builder
+	builder.WriteString("Reflection Summary\n")
+	builder.WriteString(fmt.Sprintf("Command: %s\n", reflection.Command))
+	builder.WriteString(fmt.Sprintf("Exit Code: %d\n", reflection.ExitCode))
+	if reflection.LessonsLearned != "" {
+		builder.WriteString(fmt.Sprintf("Lessons Learned: %s\n", reflection.LessonsLearned))
+	}
+	if reflection.Alternative != "" {
+		builder.WriteString(fmt.Sprintf("Proposed Alternative: %s\n", reflection.Alternative))
+		if reflection.AlternativeRationale != "" {
+			builder.WriteString(fmt.Sprintf("Rationale: %s\n", reflection.AlternativeRationale))
+		}
+	}
+	if len(reflection.SuggestedActions) > 0 {
+		builder.WriteString("Tool Actions:\n")
+		for _, action := range reflection.SuggestedActions {
+			builder.WriteString(fmt.Sprintf("- %s %s in section %s (%s): %s\n", strings.Title(action.Action), action.Name, action.Section, action.Outcome, action.Reason))
+		}
+	}
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func truncateForReflection(content string, max int) string {
+	runes := []rune(content)
+	if len(runes) <= max {
+		return content
+	}
+	return string(runes[:max]) + "\n[truncated]"
+}
+
+func sanitizeJSONResponse(resp string) string {
+	resp = strings.TrimSpace(resp)
+	if strings.HasPrefix(resp, "```") {
+		resp = strings.TrimPrefix(resp, "```json")
+		resp = strings.TrimPrefix(resp, "```")
+		resp = strings.TrimSuffix(resp, "```")
+	}
+	return strings.TrimSpace(resp)
+}
+
+type reflectionRequest struct {
+	Command           string `json:"command"`
+	ExitCode          int    `json:"exit_code"`
+	Output            string `json:"output"`
+	ToolsManifestPath string `json:"tools_manifest_path"`
+}
+
+type reflectionResponse struct {
+	Lessons     string               `json:"lessons"`
+	Alternative reflectionAlt        `json:"alternative"`
+	Tools       []reflectionToolItem `json:"tools"`
+}
+
+type reflectionAlt struct {
+	Command string `json:"command"`
+	Reason  string `json:"reason"`
+}
+
+type reflectionToolItem struct {
+	Action      string `json:"action"`
+	Name        string `json:"name"`
+	Section     string `json:"section"`
+	Description string `json:"description"`
+	Reason      string `json:"reason"`
 }
 
 // selectPersona selects the appropriate persona based on rules or defaults

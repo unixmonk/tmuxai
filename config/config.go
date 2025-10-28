@@ -5,29 +5,31 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 
-	"gopkg.in/yaml.v3"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds the application configuration
 type Config struct {
-	Debug                 bool              `mapstructure:"debug"`
-	MaxCaptureLines       int               `mapstructure:"max_capture_lines"`
-	MaxContextSize        int               `mapstructure:"max_context_size"`
-	WaitInterval          int               `mapstructure:"wait_interval"`
-	SendKeysConfirm       bool              `mapstructure:"send_keys_confirm"`
-	PasteMultilineConfirm bool              `mapstructure:"paste_multiline_confirm"`
-	ExecConfirm           bool              `mapstructure:"exec_confirm"`
-	WhitelistPatterns     []string          `mapstructure:"whitelist_patterns"`
-	BlacklistPatterns     []string          `mapstructure:"blacklist_patterns"`
-	OpenRouter            OpenRouterConfig  `mapstructure:"openrouter"`
-	AzureOpenAI           AzureOpenAIConfig `mapstructure:"azure_openai"`
-	Prompts               PromptsConfig     `mapstructure:"prompts"`
+	Debug                 bool                `mapstructure:"debug"`
+	MaxCaptureLines       int                 `mapstructure:"max_capture_lines"`
+	MaxContextSize        int                 `mapstructure:"max_context_size"`
+	WaitInterval          int                 `mapstructure:"wait_interval"`
+	SendKeysConfirm       bool                `mapstructure:"send_keys_confirm"`
+	PasteMultilineConfirm bool                `mapstructure:"paste_multiline_confirm"`
+	ExecConfirm           bool                `mapstructure:"exec_confirm"`
+	WhitelistPatterns     []string            `mapstructure:"whitelist_patterns"`
+	BlacklistPatterns     []string            `mapstructure:"blacklist_patterns"`
+	OpenRouter            OpenRouterConfig    `mapstructure:"openrouter"`
+	AzureOpenAI           AzureOpenAIConfig   `mapstructure:"azure_openai"`
+	Prompts               PromptsConfig       `mapstructure:"prompts"`
 	Personas              map[string]*Persona `mapstructure:"personas"`
-	PersonaRules          []PersonaRule     `mapstructure:"persona_rules"`
-	DefaultPersona        string            `mapstructure:"default_persona"`
+	PersonaRules          []PersonaRule       `mapstructure:"persona_rules"`
+	DefaultPersona        string              `mapstructure:"default_persona"`
+	ToolsManifestPath     string              `mapstructure:"tools_manifest_path"`
 }
 
 // OpenRouterConfig holds OpenRouter API configuration
@@ -55,8 +57,14 @@ type PromptsConfig struct {
 
 // Persona represents a single persona configuration
 type Persona struct {
-	Prompt     string `yaml:"prompt"`
-	Description string `yaml:"description"`
+	Prompt         string                 `yaml:"prompt"`
+	Description    string                 `yaml:"description"`
+	ToolsAvailable *PersonaToolsAvailable `yaml:"tools_available"`
+}
+
+// PersonaToolsAvailable describes an optional tools file to include in the persona prompt
+type PersonaToolsAvailable struct {
+	File string `yaml:"file"`
 }
 
 // PersonaRule defines rules for auto-selecting personas
@@ -68,34 +76,34 @@ type PersonaRule struct {
 // DefaultConfig returns a configuration with default values
 func DefaultConfig() *Config {
 	defaultPersonas := map[string]*Persona{
-		"pair_programmer": {
-			Prompt: `You are TmuxAI assistant. You are AI agent and live inside user's Tmux's window and can see all panes in that window.
-Think of TmuxAI as a pair programmer that sits beside user, watching users terminal window exactly as user see it.
-TmuxAI's design philosophy mirrors the way humans collaborate at the terminal. Just as a colleague sitting next to the user would observe users screen, understand context from what's visible, and help accordingly,
-TmuxAI: Observes: Reads the visible content in all your panes, Communicates and Acts: Can execute commands by calling tools.
-You and user both are able to control and interact with tmux ai exec pane.
+		"command_line_specialist": {
+			Prompt: `You are TmuxAI assistant. You are an AI command-line specialist living inside the user's tmux window and can see every pane in that window.
 
-You have perfect understanding of human common sense.
-When reasonable, avoid asking questions back and use your common sense to find conclusions yourself.
-Your role is to use anytime you need, the TmuxAIExec pane to assist the user.
-You are expert in all kinds of shell scripting, shell usage diffence between bash, zsh, fish, powershell, cmd, batch, etc and different OS-es.
-You always strive for simple, elegant, clean and effective solutions.
-Prefer using regular shell commands over other language scripts to assist the user.
+Think of yourself as the user's command-line expert who sits beside them, watching the terminal exactly as they see it and taking action when it moves the work forward. You operate primarily in a fish shell environment—understand and respect fish conventions such as universal variables, concise function definitions, rich completions, and the default prompt. Detect when the active shell differs and adapt automatically, but default to fish-centric solutions when uncertain.
 
-Address the root cause instead of the symptoms.
-NEVER generate an extremely long hash or any non-textual code, such as binary. These are not helpful to the USER and are very expensive.
-Always address user directly as 'you' in a conversational tone, avoiding third-person phrases like 'the user' or 'one should.'
+Your mandate:
+- Observe pane content continuously, reason about state, and act through ExecCommand or TmuxSendKeys when it delivers progress.
+- Prefer native shell pipelines, POSIX utilities, and fish-specific idioms over higher-level scripting unless unavoidable.
+- Keep command sequences short, composable, and well-explained. When a task is larger than a single command, break it into safe, observable steps.
+- Never assume availability of non-standard binaries unless declared in the tools manifest.
 
-IMPORTANT: BE CONCISE AND AVOID VERBOSITY. BREVITY IS CRITICAL. Minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy. Only address the specific query or task at hand.
+Collaboration guidelines:
+- Use common sense before asking questions; infer intent whenever possible.
+- Always address the user as "you" and keep responses crisp.
+- Highlight the reasoning behind command choices when ambiguity exists.
+- Address root causes instead of symptoms.
 
-Always follow the tool call schema exactly as specified and make sure to provide all necessary parameters.
-The conversation may reference tools that are no longer available. NEVER call tools that are not explicitly provided in your system prompt.
-Before calling each tool, first explain why you are calling it.
+Safety and tooling:
+- Before every tool call, state why it is required and follow the tool schema exactly.
+- Never emit binary blobs, extremely long hashes, or meaningless output.
+- After issuing ExecCommand or TmuxSendKeys, wait for observable confirmation before chaining risky actions.
+- Respect the tmux exec pane; both you and the user can interact with it at any time.
 
-You are allowed to be proactive, but only when the user asks you to do something. You should strive to strike a balance between: (a) doing the right thing when asked, including taking actions and follow-up actions, and (b) not surprising the user by taking actions without asking. For example, if the user asks you how to approach something, you should do your best to answer their question first, and not immediately jump into calling a tool.
-
-DO NOT WRITE MORE TEXT AFTER THE TOOL CALLS IN A RESPONSE. You can wait until the next response to summarize the actions you've done.`,
-			Description: "Assists with coding and development tasks as a pair programmer.",
+Discipline:
+- Be concise—verbosity wastes tokens and hides signal.
+- Default to actionable steps. If you must pause for input, be explicit.
+- Never append additional narration after tool tags.`,
+			Description: "Specialist focused on terminal workflows in fish shell with emphasis on concise command-line execution.",
 		},
 	}
 
@@ -118,9 +126,10 @@ DO NOT WRITE MORE TEXT AFTER THE TOOL CALLS IN A RESPONSE. You can wait until th
 			BaseSystem:    ``,
 			ChatAssistant: ``,
 		},
-		Personas:       defaultPersonas,
-		DefaultPersona: "pair_programmer",
-		PersonaRules:   []PersonaRule{},
+		Personas:          defaultPersonas,
+		DefaultPersona:    "command_line_specialist",
+		PersonaRules:      []PersonaRule{},
+		ToolsManifestPath: "tools-available.md",
 	}
 }
 
@@ -175,42 +184,16 @@ func Load() (*Config, error) {
 	if err := LoadPersonasFromDir(&config.Personas, personasDir); err != nil {
 		fmt.Printf("Warning: Failed to load personas from directory: %v\n", err)
 	}
+	populatePersonasWithTools(config.Personas, personasDir, configDir)
 
-	// Override with inline personas if present (inline takes precedence)
-	if len(config.Personas) == 0 || config.DefaultPersona == "" {
-		defaultPersonas := map[string]*Persona{
-			"pair_programmer": {
-				Prompt: `You are TmuxAI assistant. You are AI agent and live inside user's Tmux's window and can see all panes in that window.
-Think of TmuxAI as a pair programmer that sits beside user, watching users terminal window exactly as user see it.
-TmuxAI's design philosophy mirrors the way humans collaborate at the terminal. Just as a colleague sitting next to the user would observe users screen, understand context from what's visible, and help accordingly,
-TmuxAI: Observes: Reads the visible content in all your panes, Communicates and Acts: Can execute commands by calling tools.
-You and user both are able to control and interact with tmux ai exec pane.
+	if config.ToolsManifestPath == "" {
+		config.ToolsManifestPath = filepath.Join(configDir, "tools-available.md")
+	} else if !filepath.IsAbs(config.ToolsManifestPath) {
+		config.ToolsManifestPath = filepath.Join(configDir, config.ToolsManifestPath)
+	}
 
-You have perfect understanding of human common sense.
-When reasonable, avoid asking questions back and use your common sense to find conclusions yourself.
-Your role is to use anytime you need, the TmuxAIExec pane to assist the user.
-You are expert in all kinds of shell scripting, shell usage diffence between bash, zsh, fish, powershell, cmd, batch, etc and different OS-es.
-You always strive for simple, elegant, clean and effective solutions.
-Prefer using regular shell commands over other language scripts to assist the user.
-
-Address the root cause instead of the symptoms.
-NEVER generate an extremely long hash or any non-textual code, such as binary. These are not helpful to the USER and are very expensive.
-Always address user directly as 'you' in a conversational tone, avoiding third-person phrases like 'the user' or 'one should.'
-
-IMPORTANT: BE CONCISE AND AVOID VERBOSITY. BREVITY IS CRITICAL. Minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy. Only address the specific query or task at hand.
-
-Always follow the tool call schema exactly as specified and make sure to provide all necessary parameters.
-The conversation may reference tools that are no longer available. NEVER call tools that are not explicitly provided in your system prompt.
-Before calling each tool, first explain why you are calling it.
-
-You are allowed to be proactive, but only when the user asks you to do something. You should strive to strike a balance between: (a) doing the right thing when asked, including taking actions and follow-up actions, and (b) not surprising the user by taking actions without asking. For example, if the user asks you how to approach something, you should do your best to answer their question first, and not immediately jump into calling a tool.
-
-DO NOT WRITE MORE TEXT AFTER THE TOOL CALLS IN A RESPONSE. You can wait until the next response to summarize the actions you've done.`,
-				Description: "Assists with coding and development tasks as a pair programmer.",
-			},
-		}
-		config.Personas = defaultPersonas // Fallback to defaults if nothing loaded
-		config.DefaultPersona = "pair_programmer"
+	if err := ensureToolsManifestExists(config.ToolsManifestPath); err != nil {
+		fmt.Printf("Warning: Failed to ensure tools manifest exists: %v\n", err)
 	}
 
 	return config, nil
@@ -261,6 +244,13 @@ func GetConfigDir() (string, error) {
 
 // LoadPersonasFromDir loads persona files from the specified directory
 func LoadPersonasFromDir(personas *map[string]*Persona, dir string) error {
+	if personas == nil {
+		return fmt.Errorf("personas map pointer is nil")
+	}
+	if *personas == nil {
+		*personas = make(map[string]*Persona)
+	}
+
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -281,37 +271,107 @@ func LoadPersonasFromDir(personas *map[string]*Persona, dir string) error {
 		}
 
 		if len(*personas) >= 50 { // Limit to prevent overload
-			fmt.Printf("Warning: Skipping %s - max 50 personas loaded\\n", file.Name())
+			fmt.Printf("Warning: Skipping %s - max 50 personas loaded\n", file.Name())
 			continue
 		}
 
 		filePath := filepath.Join(dir, file.Name())
 		data, err := os.ReadFile(filePath)
 		if err != nil {
-			fmt.Printf("Warning: Failed to read %s: %v\\n", file.Name(), err)
+			fmt.Printf("Warning: Failed to read %s: %v\n", file.Name(), err)
 			continue
 		}
 
 		var persona Persona
 		if err := yaml.Unmarshal(data, &persona); err != nil {
-			fmt.Printf("Warning: Failed to parse %s: %v\\n", file.Name(), err)
+			fmt.Printf("Warning: Failed to parse %s: %v\n", file.Name(), err)
 			continue
 		}
 
 		if persona.Prompt == "" {
-			fmt.Printf("Warning: %s has no prompt, skipping\\n", file.Name())
+			fmt.Printf("Warning: %s has no prompt, skipping\n", file.Name())
 			continue
 		}
 
+		loadPersonaTools(&persona, dir)
 		(*personas)[filename] = &persona
 		loaded++
 	}
 
 	if loaded > 0 {
-		fmt.Printf("Loaded %d personas from %s\\n", loaded, dir)
+		fmt.Printf("Loaded %d personas from %s\n", loaded, dir)
 	}
 
 	return nil
+}
+
+func loadPersonaTools(persona *Persona, baseDirs ...string) {
+	if persona == nil || persona.ToolsAvailable == nil || persona.ToolsAvailable.File == "" {
+		return
+	}
+
+	pathsTried := make(map[string]struct{})
+	for _, baseDir := range baseDirs {
+		path := persona.ToolsAvailable.File
+		if baseDir != "" && !filepath.IsAbs(path) {
+			path = filepath.Join(baseDir, path)
+		}
+		if _, seen := pathsTried[path]; seen {
+			continue
+		}
+		pathsTried[path] = struct{}{}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		persona.Prompt = strings.TrimSpace(persona.Prompt + "\n\n" + string(data))
+		return
+	}
+
+	if filepath.IsAbs(persona.ToolsAvailable.File) {
+		if _, seen := pathsTried[persona.ToolsAvailable.File]; !seen {
+			data, err := os.ReadFile(persona.ToolsAvailable.File)
+			if err == nil {
+				persona.Prompt = strings.TrimSpace(persona.Prompt + "\n\n" + string(data))
+				return
+			}
+		}
+	}
+
+	fmt.Printf("Warning: Failed to load tools file %s\n", persona.ToolsAvailable.File)
+}
+
+func populatePersonasWithTools(personas map[string]*Persona, baseDirs ...string) {
+	for _, persona := range personas {
+		loadPersonaTools(persona, baseDirs...)
+	}
+}
+
+func ensureToolsManifestExists(path string) error {
+	if path == "" {
+		return nil
+	}
+
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	defaultContent := "# Tools Available for TmuxAI Personas\n\n" +
+		"The following non-standard tools are installed and may be used when appropriate. When a tool is unavailable, fall back to core POSIX utilities.\n\n" +
+		"## Search & Navigation\n\n" +
+		"- `rg` *(ripgrep)* – project-wide regex search respecting `.gitignore`.\n" +
+		"- `fd` – intuitive alternative to `find`; supports globbing and excludes.\n\n" +
+		"## Editing & Formatting\n\n" +
+		"- `nvim` – modal editor; automation via `nvim --headless` and `:lua` scripts.\n\n" +
+		"## Data Processing & Scripting\n\n" +
+		"- `jq` – JSON query and transformation.\n" +
+		"- `xh` – http client (curl alternative) with JSON processing.\n\n" +
+		"> Keep commands concise. Confirm tool availability with `command -v <name>`.\n"
+
+	return os.WriteFile(path, []byte(defaultContent), 0o644)
 }
 
 func GetConfigFilePath(filename string) string {
@@ -320,67 +380,76 @@ func GetConfigFilePath(filename string) string {
 }
 
 func TryInferType(key, value string) any {
-	var typedValue any = value
-	// Only basic type inference for bool/int/string
-	for i := 0; i < reflect.TypeOf(Config{}).NumField(); i++ {
-		field := reflect.TypeOf(Config{}).Field(i)
+	if key == "" {
+		return value
+	}
+
+	parts := strings.Split(key, ".")
+	if converted, ok := inferConfigFieldType(reflect.TypeOf(Config{}), parts, value); ok {
+		return converted
+	}
+
+	return value
+}
+
+func inferConfigFieldType(t reflect.Type, parts []string, value string) (any, bool) {
+	if len(parts) == 0 {
+		return value, false
+	}
+
+	part := parts[0]
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
 		tag := field.Tag.Get("mapstructure")
 		if tag == "" {
 			tag = strings.ToLower(field.Name)
 		}
-		// Support dot notation for nested fields
-		fullKey := tag
-		if key == fullKey {
-			switch field.Type.Kind() {
-			case reflect.Bool:
-				switch value {
-				case "true":
-					typedValue = true
-				case "false":
-					typedValue = false
-				}
-			case reflect.Int, reflect.Int64, reflect.Int32:
-				var intVal int
-				_, err := fmt.Sscanf(value, "%d", &intVal)
-				if err == nil {
-					typedValue = intVal
+		if tag != part {
+			continue
+		}
+
+		fieldType := field.Type
+		if fieldType.Kind() == reflect.Pointer {
+			fieldType = fieldType.Elem()
+		}
+
+		if len(parts) > 1 {
+			if fieldType.Kind() == reflect.Struct {
+				return inferConfigFieldType(fieldType, parts[1:], value)
+			}
+			return value, false
+		}
+
+		switch fieldType.Kind() {
+		case reflect.Bool:
+			switch strings.ToLower(value) {
+			case "true", "1", "yes", "on":
+				return true, true
+			case "false", "0", "no", "off":
+				return false, true
+			}
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if parsed, err := strconv.ParseInt(value, 10, int(fieldType.Bits())); err == nil {
+				switch fieldType.Kind() {
+				case reflect.Int:
+					return int(parsed), true
+				case reflect.Int8:
+					return int8(parsed), true
+				case reflect.Int16:
+					return int16(parsed), true
+				case reflect.Int32:
+					return int32(parsed), true
+				case reflect.Int64:
+					return int64(parsed), true
 				}
 			}
 		}
-		// Nested struct support
-		if field.Type.Kind() == reflect.Struct {
-			nestedType := field.Type
-			prefix := tag + "."
-			if strings.HasPrefix(key, prefix) {
-				nestedKey := key[len(prefix):]
-				for j := 0; j < nestedType.NumField(); j++ {
-					nf := nestedType.Field(j)
-					ntag := nf.Tag.Get("mapstructure")
-					if ntag == "" {
-						ntag = strings.ToLower(nf.Name)
-					}
-					if ntag == nestedKey {
-						switch nf.Type.Kind() {
-						case reflect.Bool:
-							switch value {
-							case "true":
-								typedValue = true
-							case "false":
-								typedValue = false
-							}
-						case reflect.Int, reflect.Int64, reflect.Int32:
-							var intVal int
-							_, err := fmt.Sscanf(value, "%d", &intVal)
-							if err == nil {
-								typedValue = intVal
-							}
-						}
-					}
-				}
-			}
-		}
+
+		return value, false
 	}
-	return typedValue
+
+	return value, false
 }
 
 // ResolveEnvKeyInConfig recursively expands environment variables in all string fields of the config struct.

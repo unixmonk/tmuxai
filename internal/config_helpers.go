@@ -2,8 +2,11 @@ package internal
 
 import (
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/alvinunreal/tmuxai/config"
 )
 
 // AllowedConfigKeys defines the list of configuration keys that users are allowed to modify
@@ -15,6 +18,7 @@ var AllowedConfigKeys = []string{
 	"paste_multiline_confirm",
 	"exec_confirm",
 	"openrouter.model",
+	"tools_manifest_path",
 }
 
 // GetMaxCaptureLines returns the max capture lines value with session override if present
@@ -81,6 +85,22 @@ func (m *Manager) GetOpenRouterModel() string {
 		}
 	}
 	return m.Config.OpenRouter.Model
+}
+
+func (m *Manager) GetToolsManifestPath() string {
+	if override, exists := m.SessionOverrides["tools_manifest_path"]; exists {
+		if val, ok := override.(string); ok && val != "" {
+			if filepath.IsAbs(val) {
+				return val
+			}
+			configDir, err := config.GetConfigDir()
+			if err == nil {
+				return filepath.Join(configDir, val)
+			}
+			return val
+		}
+	}
+	return m.Config.ToolsManifestPath
 }
 
 // FormatConfig returns a nicely formatted string of all config values with session overrides applied

@@ -10,12 +10,6 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// AiClientInterface defines the interface for AI clients to make testing easier
-type AiClientInterface interface {
-	GetResponseFromChatMessages(ctx context.Context, messages []ChatMessage, model string) (string, error)
-	ChatCompletion(ctx context.Context, messages []Message, model string) (string, error)
-}
-
 // MockAiClient is a mock implementation of AiClientInterface for testing
 type MockAiClient struct {
 	mock.Mock
@@ -36,12 +30,23 @@ func TestProcessUserMessage_EmptyStatus(t *testing.T) {
 	cfg := &config.Config{
 		Debug: false,
 	}
-
 	manager := &Manager{
 		Config:   cfg,
 		Status:   "", // Empty status
 		Messages: []ChatMessage{},
+		ExecPane: &system.TmuxPaneDetails{ // Initialize ExecPane to prevent nil pointer dereference
+			IsPrepared: false,
+			IsSubShell: false,
+		},
 	}
+
+	// Create a mock AiClient implementation
+	mockAiClient := &MockAiClient{}
+	mockAiClient.On("GetResponseFromChatMessages", mock.Anything, mock.Anything, mock.Anything).Return("mock response", nil)
+	mockAiClient.On("ChatCompletion", mock.Anything, mock.Anything, mock.Anything).Return("mock response", nil)
+
+	// Assign the mock to the manager's AiClient field (which is now AiClientInterface)
+	manager.AiClient = mockAiClient
 
 	// Mock functions that would normally be called
 	manager.confirmedToExec = func(command string, prompt string, edit bool) (bool, string) {
