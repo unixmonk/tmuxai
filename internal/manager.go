@@ -67,6 +67,7 @@ type ReflectionTask struct {
 
 // Manager represents the TmuxAI manager agent
 type Manager struct {
+<<<<<<< HEAD
 	Config             *config.Config
 	AiClient           AiClientInterface
 	Status             string // running, waiting, done
@@ -80,6 +81,19 @@ type Manager struct {
 	OS                 string
 	CurrentPersona     string
 	SessionOverrides   map[string]interface{} // session-only config overrides
+=======
+	Config           *config.Config
+	AiClient         *AiClient
+	Status           string // running, waiting, done
+	PaneId           string
+	ExecPane         *system.TmuxPaneDetails
+	Messages         []ChatMessage
+	ExecHistory      []CommandExecHistory
+	WatchMode        bool
+	OS               string
+	SessionOverrides map[string]interface{} // session-only config overrides
+	LoadedKBs        map[string]string      // Loaded knowledge bases (name -> content)
+>>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
 
 	// Functions for mocking
 	confirmedToExec   func(command string, prompt string, edit bool) (bool, string)
@@ -88,10 +102,6 @@ type Manager struct {
 
 // NewManager creates a new manager agent
 func NewManager(cfg *config.Config) (*Manager, error) {
-	if cfg.OpenRouter.APIKey == "" && cfg.AzureOpenAI.APIKey == "" {
-		fmt.Println("An API key is required. Set OpenRouter or Azure OpenAI credentials in the config file or environment variables.")
-		return nil, fmt.Errorf("API key required")
-	}
 
 	paneId, err := system.TmuxCurrentPaneId()
 	if err != nil {
@@ -124,7 +134,11 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 		ExecPane:         &system.TmuxPaneDetails{},
 		OS:               os,
 		SessionOverrides: make(map[string]interface{}),
+		LoadedKBs:        make(map[string]string),
 	}
+
+	// Set the config manager in the AI client
+	aiClient.SetConfigManager(manager)
 
 	manager.confirmedToExec = manager.confirmedToExecFn
 	manager.getTmuxPanesInXml = manager.getTmuxPanesInXmlFn
@@ -132,7 +146,14 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 	manager.CurrentPersona = manager.selectPersona()
 	logger.Debug("Selected persona: %s", manager.CurrentPersona)
 	manager.InitExecPane()
+<<<<<<< HEAD
 	manager.loadReflectionLog()
+=======
+
+	// Auto-load knowledge bases from config
+	manager.autoLoadKBs()
+
+>>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
 	return manager, nil
 }
 
@@ -458,6 +479,7 @@ func (m *Manager) GetPrompt() string {
 	tmuxaiColor := color.New(color.FgGreen, color.Bold)
 	arrowColor := color.New(color.FgYellow, color.Bold)
 	stateColor := color.New(color.FgMagenta, color.Bold)
+	modelColor := color.New(color.FgCyan, color.Bold)
 
 	var stateSymbol string
 	switch m.Status {
@@ -475,6 +497,23 @@ func (m *Manager) GetPrompt() string {
 	}
 
 	prompt := tmuxaiColor.Sprint("TmuxAI")
+
+	// Show current model if it's not the default or first available model
+	currentModel := m.GetModelsDefault()
+	availableModels := m.GetAvailableModels()
+	if len(availableModels) > 0 {
+		// Get the "expected" model (configured default or first available)
+		expectedModel := m.Config.DefaultModel
+		if expectedModel == "" && len(availableModels) > 0 {
+			expectedModel = availableModels[0] // First model as default
+		}
+
+		// Show model if current is different from expected
+		if currentModel != "" && currentModel != expectedModel {
+			prompt += " " + modelColor.Sprint("["+currentModel+"]")
+		}
+	}
+
 	if stateSymbol != "" {
 		prompt += " " + stateColor.Sprint("["+stateSymbol+"]")
 	}
