@@ -19,18 +19,14 @@ const helpMessage = `Available commands:
 - /prepare: Prepare the pane for TmuxAI automation
 - /watch <prompt>: Start watch mode
 - /squash: Summarize the chat history
-<<<<<<< HEAD
 - /exit: Exit the application
-- /persona [name]: List available personas or switch to the specified one`
-=======
+- /persona [name]: List available personas or switch to the specified one
 - /model: List available models and show current model
 - /model <name>: Switch to a different model
 - /kb: List available knowledge bases
 - /kb load <name>: Load a knowledge base
 - /kb unload <name>: Unload a knowledge base
-- /kb unload --all: Unload all knowledge bases
-- /exit: Exit the application`
->>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
+- /kb unload --all: Unload all knowledge bases`
 
 var commands = []string{
 	"/help",
@@ -42,12 +38,9 @@ var commands = []string{
 	"/prepare",
 	"/config",
 	"/squash",
-<<<<<<< HEAD
 	"/persona",
-=======
 	"/model",
 	"/kb",
->>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
 }
 
 // checks if the given content is a command

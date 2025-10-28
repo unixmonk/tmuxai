@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/alvinunreal/tmuxai/logger"
-	"github.com/rs/zerolog/log"
 )
 
 func (m *Manager) baseSystemPrompt(personaName string) string {
@@ -17,7 +16,7 @@ func (m *Manager) baseSystemPrompt(personaName string) string {
 	// Use CurrentPersona as default when personaName is empty
 	if personaName == "" {
 		personaName = m.CurrentPersona
-		log.Debug().Str("persona", personaName).Msg("Using current persona for system prompt")
+		logger.Debug("Using current persona for system prompt: %s", personaName)
 		logger.Debug("Using current persona '%s' as default", personaName)
 	}
 
@@ -79,7 +78,7 @@ func (m *Manager) baseSystemPrompt(personaName string) string {
 func (m *Manager) chatAssistantPrompt(prepared bool) ChatMessage {
 	var builder strings.Builder
 	builder.WriteString(m.baseSystemPrompt(""))
-	log.Debug().Str("persona", m.CurrentPersona).Msg("Using current persona for chat assistant prompt")
+	logger.Debug("Using current persona for chat assistant prompt: %s", m.CurrentPersona)
 
 	builder.WriteString("\nYour primary function is to assist users by interpreting their requests and executing appropriate actions.\n" +
 		"You have access to the following XML tags to control the tmux pane:\n\n" +
@@ -164,7 +163,7 @@ func (m *Manager) chatAssistantPrompt(prepared bool) ChatMessage {
 }
 
 func (m *Manager) watchPrompt() ChatMessage {
-	log.Debug().Str("persona", m.CurrentPersona).Msg("Using current persona for watch prompt")
+	logger.Debug("Using current persona for watch prompt: %s", m.CurrentPersona)
 	basePrompt := m.baseSystemPrompt("")
 	chatPrompt := fmt.Sprintf("%s\n"+
 		"You are currently in watch mode and assisting user by watching the pane content.\n"+

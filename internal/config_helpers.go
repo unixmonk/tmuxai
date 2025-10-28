@@ -18,9 +18,7 @@ var AllowedConfigKeys = []string{
 	"paste_multiline_confirm",
 	"exec_confirm",
 	"openrouter.model",
-<<<<<<< HEAD
 	"tools_manifest_path",
-=======
 	"openai.api_key",
 	"openai.model",
 	"openai.base_url",
@@ -29,7 +27,6 @@ var AllowedConfigKeys = []string{
 	"azure_openai.api_base",
 	"azure_openai.api_version",
 	"default_model",
->>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
 }
 
 // GetMaxCaptureLines returns the max capture lines value with session override if present
@@ -98,7 +95,6 @@ func (m *Manager) GetOpenRouterModel() string {
 	return m.Config.OpenRouter.Model
 }
 
-<<<<<<< HEAD
 func (m *Manager) GetToolsManifestPath() string {
 	if override, exists := m.SessionOverrides["tools_manifest_path"]; exists {
 		if val, ok := override.(string); ok && val != "" {
@@ -113,7 +109,8 @@ func (m *Manager) GetToolsManifestPath() string {
 		}
 	}
 	return m.Config.ToolsManifestPath
-=======
+}
+
 // GetOpenAIModel returns the OpenAI model value with session override if present
 func (m *Manager) GetOpenAIModel() string {
 	if override, exists := m.SessionOverrides["openai.model"]; exists {
@@ -324,7 +321,6 @@ func (m *Manager) GetModel() string {
 
 	// Fallback: try to get model from legacy config if current model name doesn't exist
 	return m.GetOpenRouterModel()
->>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
 }
 
 // FormatConfig returns a nicely formatted string of all config values with session overrides applied

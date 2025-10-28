@@ -14,24 +14,6 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-<<<<<<< HEAD
-	Debug                 bool                `mapstructure:"debug"`
-	MaxCaptureLines       int                 `mapstructure:"max_capture_lines"`
-	MaxContextSize        int                 `mapstructure:"max_context_size"`
-	WaitInterval          int                 `mapstructure:"wait_interval"`
-	SendKeysConfirm       bool                `mapstructure:"send_keys_confirm"`
-	PasteMultilineConfirm bool                `mapstructure:"paste_multiline_confirm"`
-	ExecConfirm           bool                `mapstructure:"exec_confirm"`
-	WhitelistPatterns     []string            `mapstructure:"whitelist_patterns"`
-	BlacklistPatterns     []string            `mapstructure:"blacklist_patterns"`
-	OpenRouter            OpenRouterConfig    `mapstructure:"openrouter"`
-	AzureOpenAI           AzureOpenAIConfig   `mapstructure:"azure_openai"`
-	Prompts               PromptsConfig       `mapstructure:"prompts"`
-	Personas              map[string]*Persona `mapstructure:"personas"`
-	PersonaRules          []PersonaRule       `mapstructure:"persona_rules"`
-	DefaultPersona        string              `mapstructure:"default_persona"`
-	ToolsManifestPath     string              `mapstructure:"tools_manifest_path"`
-=======
 	Debug                 bool                  `mapstructure:"debug"`
 	MaxCaptureLines       int                   `mapstructure:"max_capture_lines"`
 	MaxContextSize        int                   `mapstructure:"max_context_size"`
@@ -47,8 +29,11 @@ type Config struct {
 	DefaultModel          string                 `mapstructure:"default_model"`
 	Models                map[string]ModelConfig  `mapstructure:"models"`
 	Prompts               PromptsConfig         `mapstructure:"prompts"`
+	Personas              map[string]*Persona   `mapstructure:"personas"`
+	PersonaRules          []PersonaRule         `mapstructure:"persona_rules"`
+	DefaultPersona        string                `mapstructure:"default_persona"`
+	ToolsManifestPath     string                `mapstructure:"tools_manifest_path"`
 	KnowledgeBase         KnowledgeBaseConfig   `mapstructure:"knowledge_base"`
->>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
 }
 
 // OpenRouterConfig holds OpenRouter API configuration
@@ -95,7 +80,6 @@ type PromptsConfig struct {
 	Watch                 string `mapstructure:"watch"`
 }
 
-<<<<<<< HEAD
 // Persona represents a single persona configuration
 type Persona struct {
 	Prompt         string                 `yaml:"prompt"`
@@ -112,12 +96,12 @@ type PersonaToolsAvailable struct {
 type PersonaRule struct {
 	Match   string `mapstructure:"match"`
 	Persona string `mapstructure:"persona"`
-=======
+}
+
 // KnowledgeBaseConfig holds knowledge base configuration
 type KnowledgeBaseConfig struct {
 	AutoLoad []string `mapstructure:"auto_load"`
 	Path     string   `mapstructure:"path"`
->>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
 }
 
 // DefaultConfig returns a configuration with default values
@@ -178,17 +162,14 @@ Discipline:
 			BaseSystem:    ``,
 			ChatAssistant: ``,
 		},
-<<<<<<< HEAD
 		Personas:          defaultPersonas,
 		DefaultPersona:    "command_line_specialist",
 		PersonaRules:      []PersonaRule{},
 		ToolsManifestPath: "tools-available.md",
-=======
 		KnowledgeBase: KnowledgeBaseConfig{
 			AutoLoad: []string{},
 			Path:     "",
 		},
->>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
 	}
 }
 

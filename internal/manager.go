@@ -67,7 +67,6 @@ type ReflectionTask struct {
 
 // Manager represents the TmuxAI manager agent
 type Manager struct {
-<<<<<<< HEAD
 	Config             *config.Config
 	AiClient           AiClientInterface
 	Status             string // running, waiting, done
@@ -81,19 +80,7 @@ type Manager struct {
 	OS                 string
 	CurrentPersona     string
 	SessionOverrides   map[string]interface{} // session-only config overrides
-=======
-	Config           *config.Config
-	AiClient         *AiClient
-	Status           string // running, waiting, done
-	PaneId           string
-	ExecPane         *system.TmuxPaneDetails
-	Messages         []ChatMessage
-	ExecHistory      []CommandExecHistory
-	WatchMode        bool
-	OS               string
-	SessionOverrides map[string]interface{} // session-only config overrides
-	LoadedKBs        map[string]string      // Loaded knowledge bases (name -> content)
->>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
+	LoadedKBs          map[string]string      // Loaded knowledge bases (name -> content)
 
 	// Functions for mocking
 	confirmedToExec   func(command string, prompt string, edit bool) (bool, string)
@@ -146,14 +133,10 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 	manager.CurrentPersona = manager.selectPersona()
 	logger.Debug("Selected persona: %s", manager.CurrentPersona)
 	manager.InitExecPane()
-<<<<<<< HEAD
 	manager.loadReflectionLog()
-=======
 
 	// Auto-load knowledge bases from config
 	manager.autoLoadKBs()
-
->>>>>>> 6a4f64c49c77570731e340703ae6a4fc4c5f57cf
 	return manager, nil
 }
 
